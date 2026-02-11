@@ -10,8 +10,8 @@ import { toast } from "react-toastify";
 
 export default function ShipmentsList() {
   const navigate = useNavigate();
-  const location = useLocation();
-  const isFirstLoad = useRef(true);
+  const  = useLocation();
+  const  = useRef(true);
 
   // Pagination + search
   const [page, setPage] = useState(1);
