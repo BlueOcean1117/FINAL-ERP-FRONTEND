@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import API from "../../services/api";
 
 /* ======================
@@ -43,6 +43,19 @@ export default function Step1({ initial = {}, onNext, onUpdate = () => {} }) {
   });
 
   /* ============================
+     SAVE NEW PART WHEN DESCRIPTION CHANGES
+  ============================ */
+  const saveNewPart = useCallback(async (partNo, partDesc) => {
+    if (!partNo || !partDesc) return;
+    try {
+      await API.post("/parts", { part_no: partNo, part_desc: partDesc });
+      console.log("New part saved:", partNo);
+    } catch (err) {
+      console.log("Failed to save part:", err);
+    }
+  }, []);
+
+  /* ============================
      AUTO ENQUIRY NUMBER
   ============================ */
   useEffect(() => {
@@ -83,20 +96,7 @@ export default function Step1({ initial = {}, onNext, onUpdate = () => {} }) {
         // silently ignore if not found
         // user can type description manually
       });
-  }, [form.part_no]);
-
-  /* ============================
-     SAVE NEW PART WHEN DESCRIPTION CHANGES
-  ============================ */
-  const saveNewPart = async (partNo, partDesc) => {
-    if (!partNo || !partDesc) return;
-    try {
-      await API.post("/parts", { part_no: partNo, part_desc: partDesc });
-      console.log("New part saved:", partNo);
-    } catch (err) {
-      console.log("Failed to save part:", err);
-    }
-  };
+  }, [form.part_no, onUpdate]);
 
   /* ============================
      NET & GROSS WEIGHT CALC
@@ -122,16 +122,22 @@ export default function Step1({ initial = {}, onNext, onUpdate = () => {} }) {
       net_wt: net,
       gross_wt: gross,
     });
-  }, [form.part_net_wt, form.part_qty, form.packaging_wt]);
+  }, [form.part_net_wt, form.part_qty, form.packaging_wt, onUpdate]);
 
   /* ======================
      HANDLE INPUT CHANGE
   ====================== */
-  function change(e) {
-    const { name, value } = e.target;
-    setForm((prev) => ({ ...prev, [name]: value }));
-    onUpdate({ ...form, [name]: value });
-  }
+  const change = useCallback(
+    (e) => {
+      const { name, value } = e.target;
+      setForm((prev) => {
+        const updated = { ...prev, [name]: value };
+        onUpdate(updated);
+        return updated;
+      });
+    },
+    [onUpdate],
+  );
 
   return (
     <div className="step-form">
@@ -331,7 +337,9 @@ export default function Step1({ initial = {}, onNext, onUpdate = () => {} }) {
           >
             <option value="">Select Incoterm</option>
             {INCOTERMS.map((t) => (
-              <option key={t}>{t}</option>
+              <option key={t} value={t}>
+                {t}
+              </option>
             ))}
           </select>
         </div>
