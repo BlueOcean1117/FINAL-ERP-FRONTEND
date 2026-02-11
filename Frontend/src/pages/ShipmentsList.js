@@ -1,23 +1,20 @@
-import React, { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useCallback } from "react";
 import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
 import "jspdf-autotable";
 import API from "../services/api";
 import "./ShipmentsList.css";
-import { useNavigate, useLocation } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import BulkShipmentUpload from "./BulkShipmentUpload";
 import { toast } from "react-toastify";
 
 export default function ShipmentsList() {
   const navigate = useNavigate();
-  const location = useLocation();
-  const isFirstLoad = useRef(true);
 
   // Pagination + search
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [search, setSearch] = useState("");
-
   const [total, setTotal] = useState(0);
 
   // Data
@@ -33,16 +30,8 @@ export default function ShipmentsList() {
   // Bulk Upload Modal
   const [visibleBulkUploadModal, setVisibleBulkUploadModal] = useState(false);
 
-  // ---------- INITIAL LOAD ----------
-  useEffect(() => {
-    API.get("/health")
-      .then(() => setBackendStatus("connected"))
-      .catch(() => setBackendStatus("disconnected"))
-      .finally(fetchAll);
-  }, []);
-
   // ---------- FETCH SHIPMENTS ----------
-  function fetchAll() {
+  const fetchAll = useCallback(() => {
     setLoading(true);
     setError("");
 
@@ -53,7 +42,7 @@ export default function ShipmentsList() {
         const data = Array.isArray(res.data) ? res.data : [];
         setRows(data);
         setFilteredRows(data);
-        //setTotal(data.length);
+        setTotal(data.length);
       })
       .catch((err) => {
         console.error("Failed to load shipments:", err);
@@ -61,39 +50,46 @@ export default function ShipmentsList() {
         setRows([]);
       })
       .finally(() => setLoading(false));
-  }
-  // ✅ FIX: ALWAYS SYNC filteredRows WITH rows
+  }, [page, pageSize, search]);
+
+  // ---------- INITIAL LOAD ----------
+  useEffect(() => {
+    API.get("/health")
+      .then(() => setBackendStatus("connected"))
+      .catch(() => setBackendStatus("disconnected"))
+      .finally(() => fetchAll());
+  }, [fetchAll]);
+
+  // ✅ SYNC filteredRows WITH rows
   useEffect(() => {
     setFilteredRows(rows);
   }, [rows]);
 
-  // ---------- LIVE SEARCH ----------
-  useEffect(() => {
-    fetchAll();
-  }, [page, pageSize, search]);
-
   // ---------- STATUS UPDATE ----------
-  async function updateStatus(id, status) {
-    try {
-      await API.patch(`/shipment/delivery-status/${id}`, {
-        delivery_status: status,
-      });
-      fetchAll();
-    } catch {
-      toast.error("Status update failed");
-    }
-  }
+  const updateStatus = useCallback(
+    async (id, status) => {
+      try {
+        await API.patch(`/shipment/delivery-status/${id}`, {
+          delivery_status: status,
+        });
+        fetchAll();
+      } catch {
+        toast.error("Status update failed");
+      }
+    },
+    [fetchAll],
+  );
 
   // ---------- EXPORT EXCEL ----------
-  function exportExcel() {
+  const exportExcel = useCallback(() => {
     const ws = XLSX.utils.json_to_sheet(filteredRows);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Shipments");
     XLSX.writeFile(wb, "shipments.xlsx");
-  }
+  }, [filteredRows]);
 
   // ---------- EXPORT PDF ----------
-  function exportPDF() {
+  const exportPDF = useCallback(() => {
     const doc = new jsPDF("l", "pt", "a4");
     doc.autoTable({
       head: [
@@ -130,7 +126,41 @@ export default function ShipmentsList() {
       ]),
     });
     doc.save("shipments.pdf");
-  }
+  }, [filteredRows]);
+
+  // ---------- SAVE DESCRIPTION ----------
+  const saveDescription = useCallback(
+    async (id) => {
+      try {
+        setSavingId(id);
+        await API.patch(`/shipment/manual-desc/${id}`, {
+          manual_desc: descValues[id],
+        });
+        toast.success("Description saved ✅");
+        fetchAll();
+      } catch {
+        toast.error("Failed to save description ❌");
+      } finally {
+        setSavingId(null);
+      }
+    },
+    [descValues, fetchAll],
+  );
+
+  // ---------- UPDATE DELIVERY STATUS ----------
+  const updateDeliveryStatus = useCallback(
+    async (id, status) => {
+      try {
+        await API.patch(`/shipment/delivery-status/${id}`, {
+          delivery_status: status,
+        });
+        fetchAll();
+      } catch {
+        toast.error("Failed to update delivery status");
+      }
+    },
+    [fetchAll],
+  );
 
   // ---------- RENDER ----------
   return (
@@ -256,16 +286,9 @@ export default function ShipmentsList() {
                       r.delivery_status || "IN_PROCESS"
                     }`}
                     value={r.delivery_status || "IN_PROCESS"}
-                    onChange={async (e) => {
-                      try {
-                        await API.patch(`/shipment/delivery-status/${r._id}`, {
-                          delivery_status: e.target.value,
-                        });
-                        fetchAll();
-                      } catch {
-                        toast.error("Failed to update delivery status");
-                      }
-                    }}
+                    onChange={(e) =>
+                      updateDeliveryStatus(r._id, e.target.value)
+                    }
                   >
                     <option value="IN_PROCESS">In Process</option>
                     <option value="IN_TRANSIT">In Transit</option>
@@ -306,20 +329,7 @@ export default function ShipmentsList() {
                   <button
                     className="btn small"
                     disabled={savingId === r._id}
-                    onClick={async () => {
-                      try {
-                        setSavingId(r._id);
-                        await API.patch(`/shipment/manual-desc/${r._id}`, {
-                          manual_desc: descValues[r._id],
-                        });
-                        toast.success("Description saved ✅");
-                        fetchAll();
-                      } catch {
-                        toast.error("Failed to save description ❌");
-                      } finally {
-                        setSavingId(null);
-                      }
-                    }}
+                    onClick={() => saveDescription(r._id)}
                   >
                     {savingId === r._id ? "Saving..." : "Save"}
                   </button>
